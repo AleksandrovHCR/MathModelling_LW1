@@ -23,6 +23,7 @@
 }
 else{
      <div><LineChart @ref="lineChart" /></div>
+     <div><ScatterChart @ref="phaseChart"  Width="560" Height="480"/></div>
 <table class="table">
     <thead>
         <tr>
@@ -55,7 +56,14 @@ else{
 
 
 @code {
+    //Графики
     private LineChart lineChart = default!;
+    //Фазовый график
+    private ScatterChart? phaseChart; 
+    private ScatterChartOptions scatterChartOptions = default!;
+    private ChartData chartData = default!;
+
+
     private double P_init=10;
     private double V_init=80;
     private double Time=100;
@@ -143,27 +151,43 @@ else{
         public double V;
     }
     private List<LV_Result> LV_Results = null;
+
+
+
+    //========================вычисления==============
     async Task Calculate()
     {
         Lotki_Volterra LV_Model = new Lotki_Volterra(a, b, c, d, P_init, V_init, Time);
         LV_Model.Calculate(H_step);
         LV_Results = LV_Model.Pack_into_table();
-         if(LV_Results.Count()!=0)
+         if(LV_Results.Count()!=0){
              await RenderPlotAsync();
+
+             //======================ЗАгрузка данных======
+             chartData = new ChartData
+            {
+                Datasets = new()
+                {
+                    GetRandomRadarChartDataset(0)
+                }
+            };
+            scatterChartOptions = new() { };
+            scatterChartOptions.Scales.X!.Title = new ChartAxesTitle { Text = "Жертвы", Display = true };
+            scatterChartOptions.Scales.Y!.Title = new ChartAxesTitle { Text = "Хищники", Display = true };
+
+             await phaseChart.InitializeAsync(chartData, scatterChartOptions);
+            
+         }
     }
 
     private async Task RenderPlotAsync()
 {
     if (LV_Results == null || LV_Results.Count == 0)
         return;
-
-    // Если lineChart ещё null (компонент не отрисовался), коротко подождём и повторим проверку
     int waitAttempts = 5;
     while (lineChart == null && waitAttempts-- > 0)
     {
-        // даём рендеру завершиться
         await Task.Yield();
-        // маленькая пауза для серверного рендера (опционально)
         await Task.Delay(20);
     }
 
@@ -208,5 +232,36 @@ else{
     await lineChart.InitializeAsync(data,options,null);
 }
 
+
+//============================Фазовая диаграмма==============================
+// Инициализация фазовой диаграммы (V по X, P по Y)
+ private ScatterChartDataset GetRandomRadarChartDataset(int recordIndex)
+    {
+        var c = ColorUtility.CategoricalTwelveColors[recordIndex].ToColor();
+
+        return new ScatterChartDataset
+            {
+                Label = "Хищники",
+                Data = GetRandomData(),
+                BackgroundColor = c.ToRgbaString(), // RGBA
+                BorderColor = c.ToRgbString(), // RGB
+                BorderWidth = 2,
+                HoverBorderWidth = 4
+                //ShowLine=true
+            };
+    }
+
+    private List<ScatterChartDataPoint?> GetRandomData()
+    {
+        var data = new List<ScatterChartDataPoint?>();
+        // for (var index = 0; index < 10; index++)
+        // {
+        //     data.Add(new(random.Next(200), random.Next(200)));
+        // }
+        foreach(LV_Result LV in LV_Results){
+            data.Add(new(LV.V, LV.P));
+        }
+        return data;
+    }
 
 }
