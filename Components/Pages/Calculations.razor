@@ -1,0 +1,215 @@
+﻿@page "/calculations"
+
+@rendermode InteractiveServer
+<head>
+   
+</head>
+<PageTitle>Вычисления</PageTitle>
+
+<h3>Вычисления</h3>
+<div class="Input">
+    <p>Количество хищников:</p> <input class="form-control" type="number" min="1" step="1" @bind="P_init" />
+    <p>Количество жертв:</p> <input class="form-control" type="number" min="2" step="1" @bind="V_init" />
+    <p>Время наблюдения:</p> <input class="form-control" type="number" step="0.01" @bind="Time" />
+    <p>Шаг интегрирования:</p><input class="form-control" type="number" min="0.01" step="0.01" @bind="H_step" />
+    <p>Вероятность рождаемости жертв:</p> <input class ="form-control" type="number" min="0" max="1" step="0.01" @bind="a" />
+    <p>Вероятность смертности жертв при встрече с хищником:</p> <input class="form-control" type="number" min="0" max="1" step="0.01" @bind="b" />
+    <p>Вероятность убыли хищников при нехватке еды:</p> <input class="form-control" type="number" step="0.01" min="0" max="1" @bind="c" />
+    <p>Вероятность достаточности еды для размножения хищников:</p><input class="form-control" type="number" step="0.01" min="0" max="1" @bind="d" />
+    <p></p>
+    <button class="btn btn-primary" @onclick="Calculate">Вычислить</button>
+</div>
+
+@if (LV_Results == null)
+{
+    <p><em>Здесь должны быть результаты расчётов</em></p>
+}
+else{
+
+<div><LineChart @ref="lineChart" /></div>
+<table class="table">
+    <thead>
+        <tr>
+            <th>Время</th>
+            <th>Кол-во хищников</th>
+            <th>Кол-во жертв</th>
+        </tr>
+    </thead>
+    <tbody>
+        @* @foreach (var person in people)
+        {
+            <tr>
+                <td>@person.Name</td>
+                <td>@person.Age</td>
+            </tr>
+        } *@
+            @foreach(var LV in LV_Results)
+            {
+                <tr>
+                    <td>@LV.Time</td>
+                    <td>@LV.P</td>
+                    <td>@LV.V</td>
+                </tr>
+            }
+        </tbody>
+</table>
+
+}
+
+
+
+@code {
+    private double P_init=10;
+    private double V_init=80;
+    private double Time=100;
+    private double H_step=0.1;
+
+    private double a=0.5;
+    private double b=0.02;
+    private double c=0.4;
+    private double d=0.1;
+    //List<double>
+    private LineChart lineChart = default!;//График
+    public class Lotki_Volterra
+    {
+
+         
+        List<double> Calc_P= new List<double>();
+        List<double> Calc_V = new List<double>();
+        List<double> Times = new List<double>();
+        double a;
+        double b;
+        double c;
+        double d;
+
+        double End_Time;
+
+        public Lotki_Volterra(double a, double b, double c, double d, double P, double V, double T)
+        {
+            this.a = a; this.d = d; this.c = c; this.b = b; Calc_P.Add(P); Calc_V.Add(V); End_Time = T;
+        }
+
+        private double dV_dt(double P, double V) => (a - b * P) * V;
+        private double dP_dt(double P, double V) => (-c + d * V) * P;
+        private void RungeKutta4(double P, double V, double H)
+        {
+            double q1 = dV_dt(P, V);
+            double q2 = dV_dt(P + (H * q1 / 2), V + (H * q1 / 2));
+            double q3 = dV_dt(P + (H * q2 / 2), V + (H * q2 / 2));
+            double q4 = dV_dt(P + H * q3, V + H * q3);
+
+            double V_next = V + (q1 + 2 * q2 + 2 * q3 + q4) * (H / 6);
+            Calc_V.Add(V_next);
+
+
+            double k1 = dP_dt(P, V);
+            double k2 = dP_dt(P + H*k1 / 2, V + H * k1 / 2);
+            double k3 = dP_dt(P + H*k2 / 2, V + H * k2 / 2);
+            double k4 = dP_dt(P+H*k3, V+H*k3);
+
+
+
+            double P_next = P + (k1 + 2 * k2 + 2 * k3 + k4) * (H / 6);
+            Calc_P.Add(P_next);
+        }
+
+        public void Calculate(double H)
+        {
+            double Current_time = 0;
+            while (Current_time <= End_Time)
+            {
+                RungeKutta4(Calc_P.Last(), Calc_V.Last(), H);
+                Times.Add(Current_time);
+                Current_time += H;
+            }
+        }
+        public List<LV_Result> Pack_into_table()
+        {
+            List<LV_Result> LV_Results = new List<LV_Result>();
+
+            for(int i = 0; i < Times.Count; i++)
+            {
+                LV_Result LV = new LV_Result() { Time = Times[i], P = Calc_P[i], V = Calc_V[i] };
+                LV_Results.Add(LV);
+            }
+
+            return LV_Results;
+        }
+
+    }
+
+    public class LV_Result//Хранение результатов
+    {
+        public double Time;
+        public double P;
+        public double V;
+    }
+    private List<LV_Result> LV_Results = null;
+    void Calculate()
+    {
+        Lotki_Volterra LV_Model = new Lotki_Volterra(a, b, c, d, P_init, V_init, Time);
+        LV_Model.Calculate(H_step);
+        LV_Results = LV_Model.Pack_into_table();
+        if(LV_Results.Count()!=0)
+            RenderPlotAsync();
+    }
+
+    private void RenderPlotAsync(){
+        List<string> Axis_X=new List<string>();
+        List<double?> P_Line= new   List<double?>();
+        List<double?> V_Line= new   List<double?>();
+        foreach(LV_Result LV in LV_Results){
+            Axis_X.Add(LV.Time.ToString());
+            P_Line.Add(LV.P);
+            V_Line.Add(LV.V);
+        }
+
+        var data = new ChartData{
+            Labels = Axis_X;
+            Datasets = new List<IChartDataset>(){
+                new LineChartDataset()
+                    {
+                        Label = "Хищники",
+                        Data = P_Line,
+                        BackgroundColor = "rgb(88, 80, 141)",
+                        BorderColor = "rgb(88, 80, 141)",
+                        BorderWidth = 2,
+                        HoverBorderWidth = 4,
+                        //PointBackgroundColor = "rgb(88, 80, 141)",
+                        //PointBorderColor = "rgb(88, 80, 141)",
+                        //PointRadius = 0, // hide points
+                        //PointHoverRadius = 4,
+                    },
+                    new LineChartDataset()
+                    {
+                        Label = "Жертвы",
+                        Data = V_Line,
+                        BackgroundColor = "rgb(255, 166, 0)",
+                        BorderColor = "rgb(255, 166, 0)",
+                        BorderWidth = 2,
+                        HoverBorderWidth = 4,
+                        //PointBackgroundColor = "rgb(88, 80, 141)",
+                        //PointBorderColor = "rgb(88, 80, 141)",
+                        //PointRadius = 0, // hide points
+                        //PointHoverRadius = 4,
+                    }
+            }
+        };
+       // var options = new LineChartOptions();
+
+        options.Interaction.Mode = InteractionMode.Index;
+
+        options.Plugins.Title!.Text = "Модель Лотки-Вольтерры";
+        options.Plugins.Title.Display = true;
+        options.Plugins.Title.Font = new ChartFont { Size = 20 };
+
+        options.Responsive = true;
+
+        options.Scales.X!.Title = new ChartAxesTitle { Text = "Время", Display = true };
+        options.Scales.Y!.Title = new ChartAxesTitle { Text = "Популяция", Display = true };
+
+        //await lineChart.InitializeAsync(data, options);
+    }
+
+
+}
