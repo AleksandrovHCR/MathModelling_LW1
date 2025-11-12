@@ -1,9 +1,6 @@
 ﻿@page "/calculations"
-
 @rendermode InteractiveServer
-<head>
-   
-</head>
+
 <PageTitle>Вычисления</PageTitle>
 
 <h3>Вычисления</h3>
@@ -19,14 +16,13 @@
     <p></p>
     <button class="btn btn-primary" @onclick="Calculate">Вычислить</button>
 </div>
-
+ 
 @if (LV_Results == null)
 {
     <p><em>Здесь должны быть результаты расчётов</em></p>
 }
 else{
-
-<div><LineChart @ref="lineChart" /></div>
+     <div><LineChart @ref="lineChart" /></div>
 <table class="table">
     <thead>
         <tr>
@@ -59,6 +55,7 @@ else{
 
 
 @code {
+    private LineChart lineChart = default!;
     private double P_init=10;
     private double V_init=80;
     private double Time=100;
@@ -69,11 +66,10 @@ else{
     private double c=0.4;
     private double d=0.1;
     //List<double>
-    private LineChart lineChart = default!;//График
+  //  private LineChart lineChart = default!;//График
     public class Lotki_Volterra
     {
-
-         
+    
         List<double> Calc_P= new List<double>();
         List<double> Calc_V = new List<double>();
         List<double> Times = new List<double>();
@@ -91,26 +87,28 @@ else{
 
         private double dV_dt(double P, double V) => (a - b * P) * V;
         private double dP_dt(double P, double V) => (-c + d * V) * P;
-        private void RungeKutta4(double P, double V, double H)
+        private void RungeKutta4(double P, double V, double h)
         {
+
+              double p1 = dP_dt(P, V);
             double q1 = dV_dt(P, V);
-            double q2 = dV_dt(P + (H * q1 / 2), V + (H * q1 / 2));
-            double q3 = dV_dt(P + (H * q2 / 2), V + (H * q2 / 2));
-            double q4 = dV_dt(P + H * q3, V + H * q3);
 
-            double V_next = V + (q1 + 2 * q2 + 2 * q3 + q4) * (H / 6);
-            Calc_V.Add(V_next);
+            double p2 = dP_dt(P + 0.5 * h * p1, V + 0.5 * h * q1);
+            double q2 = dV_dt(P + 0.5 * h * p1, V + 0.5 * h * q1);
 
+            double p3 = dP_dt(P + 0.5 * h * p2, V + 0.5 * h * q2);
+            double q3 = dV_dt(P + 0.5 * h * p2, V + 0.5 * h * q2);
 
-            double k1 = dP_dt(P, V);
-            double k2 = dP_dt(P + H*k1 / 2, V + H * k1 / 2);
-            double k3 = dP_dt(P + H*k2 / 2, V + H * k2 / 2);
-            double k4 = dP_dt(P+H*k3, V+H*k3);
+            double p4 = dP_dt(P + h * p3, V + h * q3);
+            double q4 = dV_dt(P + h * p3, V + h * q3);
 
+            double Pnext = P + (h / 6.0) * (p1 + 2 * p2 + 2 * p3 + p4);
+            double Vnext = V + (h / 6.0) * (q1 + 2 * q2 + 2 * q3 + q4);
 
-
-            double P_next = P + (k1 + 2 * k2 + 2 * k3 + k4) * (H / 6);
-            Calc_P.Add(P_next);
+            if (Pnext < 0 && Pnext > -1e-12) Pnext = 0.0;
+            if (Vnext < 0 && Vnext > -1e-12) Vnext = 0.0;
+            Calc_P.Add(Pnext);
+            Calc_V.Add(Vnext);
         }
 
         public void Calculate(double H)
@@ -145,71 +143,70 @@ else{
         public double V;
     }
     private List<LV_Result> LV_Results = null;
-    void Calculate()
+    async Task Calculate()
     {
         Lotki_Volterra LV_Model = new Lotki_Volterra(a, b, c, d, P_init, V_init, Time);
         LV_Model.Calculate(H_step);
         LV_Results = LV_Model.Pack_into_table();
-        if(LV_Results.Count()!=0)
-            RenderPlotAsync();
+         if(LV_Results.Count()!=0)
+             await RenderPlotAsync();
     }
 
-    private void RenderPlotAsync(){
-        List<string> Axis_X=new List<string>();
-        List<double?> P_Line= new   List<double?>();
-        List<double?> V_Line= new   List<double?>();
-        foreach(LV_Result LV in LV_Results){
-            Axis_X.Add(LV.Time.ToString());
-            P_Line.Add(LV.P);
-            V_Line.Add(LV.V);
+    private async Task RenderPlotAsync()
+{
+    if (LV_Results == null || LV_Results.Count == 0)
+        return;
+
+    // Если lineChart ещё null (компонент не отрисовался), коротко подождём и повторим проверку
+    int waitAttempts = 5;
+    while (lineChart == null && waitAttempts-- > 0)
+    {
+        // даём рендеру завершиться
+        await Task.Yield();
+        // маленькая пауза для серверного рендера (опционально)
+        await Task.Delay(20);
+    }
+
+    if (lineChart == null)
+    {
+        Console.Error.WriteLine("lineChart is null — не удалось получить @ref для LineChart.");
+        return;
+    }
+
+    var Axis_X = new List<string>(LV_Results.Count);
+    var P_Line = new List<double?>(LV_Results.Count);
+    var V_Line = new List<double?>(LV_Results.Count);
+
+    foreach (var LV in LV_Results)
+    {
+        Axis_X.Add(LV.Time.ToString("G"));
+        P_Line.Add(LV.P);
+        V_Line.Add(LV.V);
+    }
+
+    var data = new ChartData
+    {
+        Labels = Axis_X,
+        Datasets = new List<IChartDataset>
+        {
+            new LineChartDataset { Label = "Хищники", Data = P_Line, BackgroundColor = "rgb(88, 80, 141)", BorderColor = "rgb(88, 80, 141)", BorderWidth = 2 },
+            new LineChartDataset { Label = "Жертвы",  Data = V_Line, BackgroundColor = "rgb(255, 166, 0)", BorderColor = "rgb(255, 166, 0)", BorderWidth = 2 }
         }
+    };
 
-        var data = new ChartData{
-            Labels = Axis_X;
-            Datasets = new List<IChartDataset>(){
-                new LineChartDataset()
-                    {
-                        Label = "Хищники",
-                        Data = P_Line,
-                        BackgroundColor = "rgb(88, 80, 141)",
-                        BorderColor = "rgb(88, 80, 141)",
-                        BorderWidth = 2,
-                        HoverBorderWidth = 4,
-                        //PointBackgroundColor = "rgb(88, 80, 141)",
-                        //PointBorderColor = "rgb(88, 80, 141)",
-                        //PointRadius = 0, // hide points
-                        //PointHoverRadius = 4,
-                    },
-                    new LineChartDataset()
-                    {
-                        Label = "Жертвы",
-                        Data = V_Line,
-                        BackgroundColor = "rgb(255, 166, 0)",
-                        BorderColor = "rgb(255, 166, 0)",
-                        BorderWidth = 2,
-                        HoverBorderWidth = 4,
-                        //PointBackgroundColor = "rgb(88, 80, 141)",
-                        //PointBorderColor = "rgb(88, 80, 141)",
-                        //PointRadius = 0, // hide points
-                        //PointHoverRadius = 4,
-                    }
-            }
-        };
-       // var options = new LineChartOptions();
 
-        options.Interaction.Mode = InteractionMode.Index;
 
-        options.Plugins.Title!.Text = "Модель Лотки-Вольтерры";
-        options.Plugins.Title.Display = true;
-        options.Plugins.Title.Font = new ChartFont { Size = 20 };
+    
+    var options = new LineChartOptions
+    {
+        Responsive = true
+        
+    };
+    options.Scales.X!.Title = new ChartAxesTitle { Text = "Время", Display = true };
+    options.Scales.Y!.Title = new ChartAxesTitle { Text = "Популяция", Display = true };
 
-        options.Responsive = true;
-
-        options.Scales.X!.Title = new ChartAxesTitle { Text = "Время", Display = true };
-        options.Scales.Y!.Title = new ChartAxesTitle { Text = "Популяция", Display = true };
-
-        //await lineChart.InitializeAsync(data, options);
-    }
+    await lineChart.InitializeAsync(data,options,null);
+}
 
 
 }
