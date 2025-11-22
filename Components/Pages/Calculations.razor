@@ -22,6 +22,7 @@
     <p><em>Здесь должны быть результаты расчётов</em></p>
 }
 else{
+    <p role="status">Стационарная точка: { @Static_Point[0] ; @Static_Point[1] }</p>
      <div><LineChart @ref="lineChart" /></div>
      <div><ScatterChart @ref="phaseChart"  Width="560" Height="480"/></div>
 <table class="table">
@@ -63,6 +64,7 @@ else{
     private ScatterChartOptions scatterChartOptions = default!;
     private ChartData chartData = default!;
 
+    private double[] Static_Point = new double[] {0,0};
 
     private double P_init=10;
     private double V_init=80;
@@ -74,10 +76,10 @@ else{
     private double c=0.4;
     private double d=0.1;
     //List<double>
-  //  private LineChart lineChart = default!;//График
+    //  private LineChart lineChart = default!;//График
     public class Lotki_Volterra
     {
-    
+
         List<double> Calc_P= new List<double>();
         List<double> Calc_V = new List<double>();
         List<double> Times = new List<double>();
@@ -98,7 +100,7 @@ else{
         private void RungeKutta4(double P, double V, double h)
         {
 
-              double p1 = dP_dt(P, V);
+            double p1 = dP_dt(P, V);
             double q1 = dV_dt(P, V);
 
             double p2 = dP_dt(P + 0.5 * h * p1, V + 0.5 * h * q1);
@@ -110,11 +112,13 @@ else{
             double p4 = dP_dt(P + h * p3, V + h * q3);
             double q4 = dV_dt(P + h * p3, V + h * q3);
 
-            double Pnext = P + (h / 6.0) * (p1 + 2 * p2 + 2 * p3 + p4);
-            double Vnext = V + (h / 6.0) * (q1 + 2 * q2 + 2 * q3 + q4);
+            double Pnext = Math.Round(P + (h / 6.0) * (p1 + 2 * p2 + 2 * p3 + p4),6);
+            double Vnext = Math.Round(V + (h / 6.0) * (q1 + 2 * q2 + 2 * q3 + q4),6);
 
-            if (Pnext < 0 && Pnext > -1e-12) Pnext = 0.0;
-            if (Vnext < 0 && Vnext > -1e-12) Vnext = 0.0;
+            //if (Pnext < 0 || Pnext > -1e-12) Pnext = 0.0;
+            //if (Vnext < 0 || Vnext > -1e-12) Vnext = 0.0;
+            if (Pnext < 0) Pnext = 0.0;
+            if (Vnext < 0) Vnext = 0.0;
             Calc_P.Add(Pnext);
             Calc_V.Add(Vnext);
         }
@@ -157,58 +161,63 @@ else{
     //========================вычисления==============
     async Task Calculate()
     {
+       
+
+        Get_Static_Point();
         Lotki_Volterra LV_Model = new Lotki_Volterra(a, b, c, d, P_init, V_init, Time);
         LV_Model.Calculate(H_step);
         LV_Results = LV_Model.Pack_into_table();
-         if(LV_Results.Count()!=0){
-             await RenderPlotAsync();
+        if(LV_Results.Count()!=0){
+            await RenderPlotAsync();
 
-             //======================ЗАгрузка данных======
-             chartData = new ChartData
+            //======================ЗАгрузка данных======
+            chartData = new ChartData
             {
                 Datasets = new()
                 {
                     GetRandomRadarChartDataset(0)
                 }
             };
-            scatterChartOptions = new() { };
+            scatterChartOptions = new() {
+
+            };
             scatterChartOptions.Scales.X!.Title = new ChartAxesTitle { Text = "Жертвы", Display = true };
             scatterChartOptions.Scales.Y!.Title = new ChartAxesTitle { Text = "Хищники", Display = true };
 
-             await phaseChart.InitializeAsync(chartData, scatterChartOptions);
-            
-         }
+            await phaseChart.InitializeAsync(chartData, scatterChartOptions);
+
+        }
     }
 
     private async Task RenderPlotAsync()
-{
-    if (LV_Results == null || LV_Results.Count == 0)
-        return;
-    int waitAttempts = 5;
-    while (lineChart == null && waitAttempts-- > 0)
     {
-        await Task.Yield();
-        await Task.Delay(20);
-    }
+        if (LV_Results == null || LV_Results.Count == 0)
+            return;
+        int waitAttempts = 5;
+        while (lineChart == null && waitAttempts-- > 0)
+        {
+            await Task.Yield();
+            await Task.Delay(20);
+        }
 
-    if (lineChart == null)
-    {
-        Console.Error.WriteLine("lineChart is null — не удалось получить @ref для LineChart.");
-        return;
-    }
+        if (lineChart == null)
+        {
+            Console.Error.WriteLine("lineChart is null — не удалось получить @ref для LineChart.");
+            return;
+        }
 
-    var Axis_X = new List<string>(LV_Results.Count);
-    var P_Line = new List<double?>(LV_Results.Count);
-    var V_Line = new List<double?>(LV_Results.Count);
+        var Axis_X = new List<string>(LV_Results.Count);
+        var P_Line = new List<double?>(LV_Results.Count);
+        var V_Line = new List<double?>(LV_Results.Count);
 
-    foreach (var LV in LV_Results)
-    {
-        Axis_X.Add(LV.Time.ToString("G"));
-        P_Line.Add(LV.P);
-        V_Line.Add(LV.V);
-    }
+        foreach (var LV in LV_Results)
+        {
+            Axis_X.Add(LV.Time.ToString("G"));
+            P_Line.Add(LV.P);
+            V_Line.Add(LV.V);
+        }
 
-    var data = new ChartData
+        var data = new ChartData
     {
         Labels = Axis_X,
         Datasets = new List<IChartDataset>
@@ -220,48 +229,49 @@ else{
 
 
 
-    
-    var options = new LineChartOptions
+
+        var options = new LineChartOptions
     {
         Responsive = true
-        
+
     };
-    options.Scales.X!.Title = new ChartAxesTitle { Text = "Время", Display = true };
-    options.Scales.Y!.Title = new ChartAxesTitle { Text = "Популяция", Display = true };
+        options.Scales.X!.Title = new ChartAxesTitle { Text = "Время", Display = true };
+        options.Scales.Y!.Title = new ChartAxesTitle { Text = "Популяция", Display = true };    
 
-    await lineChart.InitializeAsync(data,options,null);
-}
+        await lineChart.InitializeAsync(data,options,null);
+    }
 
 
-//============================Фазовая диаграмма==============================
-// Инициализация фазовой диаграммы (V по X, P по Y)
- private ScatterChartDataset GetRandomRadarChartDataset(int recordIndex)
+    //============================Фазовая диаграмма==============================
+    private ScatterChartDataset GetRandomRadarChartDataset(int recordIndex)
     {
         var c = ColorUtility.CategoricalTwelveColors[recordIndex].ToColor();
 
         return new ScatterChartDataset
             {
                 Label = "Хищники",
-                Data = GetRandomData(),
+                Data = GetPhaseData(),
                 BackgroundColor = c.ToRgbaString(), // RGBA
                 BorderColor = c.ToRgbString(), // RGB
                 BorderWidth = 2,
-                HoverBorderWidth = 4
-                //ShowLine=true
+                HoverBorderWidth = 4,
+                 Tension = 0.0
             };
     }
 
-    private List<ScatterChartDataPoint?> GetRandomData()
+    private List<ScatterChartDataPoint?> GetPhaseData()
     {
         var data = new List<ScatterChartDataPoint?>();
-        // for (var index = 0; index < 10; index++)
-        // {
-        //     data.Add(new(random.Next(200), random.Next(200)));
-        // }
         foreach(LV_Result LV in LV_Results){
             data.Add(new(LV.V, LV.P));
         }
         return data;
     }
-
+    //==========================стационарная точка================
+   
+    private void Get_Static_Point()
+    {
+        Static_Point[0] = c / d;
+        Static_Point[1] = a / b;
+    }
 }
